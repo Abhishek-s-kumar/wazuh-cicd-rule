@@ -1,0 +1,1 @@
+# wazuh-cicd-rule
