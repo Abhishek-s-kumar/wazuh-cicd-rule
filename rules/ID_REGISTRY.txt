@@ -1,0 +1,9 @@
+100000-100099  reserved
+100100-100199  PowerShell detections
+100200-100299  CVE detections
+100300-100399  SAP / app-specific
+100400-100499  File operations
+100500-100599  Network operations
+100600-100899  Suppression rules  (level 0)
+100900-100999  Custom org rules
+101000-120000  Future Sigma
