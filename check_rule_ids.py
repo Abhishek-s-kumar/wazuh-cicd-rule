@@ -21,7 +21,7 @@ def get_changed_rule_files():
                 changed_files.append((status, Path(file_path)))
         return changed_files
     except subprocess.CalledProcessError as e:
-        print("❌ Failed to get changed files:", e)
+        print(" Failed to get changed files:", e)
         sys.exit(1)
 
 def extract_rule_ids_from_xml(content):
@@ -35,7 +35,7 @@ def extract_rule_ids_from_xml(content):
             if rule_id and rule_id.isdigit():
                 ids.append(int(rule_id))
     except ET.ParseError as e:
-        print(f"⚠️ XML Parse Error: {e}")
+        print(f" XML Parse Error: {e}")
     return ids
 
 
@@ -67,7 +67,7 @@ def detect_duplicates(rule_ids):
     return [rule_id for rule_id, count in counter.items() if count > 1]
 
 def print_conflicts(conflicting_ids, rule_id_to_files):
-    print("❌ Conflicts detected:")
+    print(" Conflicts detected:")
     for rule_id in sorted(conflicting_ids):
         files = rule_id_to_files.get(rule_id, [])
         print(f"  - Rule ID {rule_id} found in:")
@@ -77,7 +77,7 @@ def print_conflicts(conflicting_ids, rule_id_to_files):
 def main():
     changed_files = get_changed_rule_files()
     if not changed_files:
-        print("✅ No rule files were changed in this PR.")
+        print(" No rule files were changed in this PR.")
         return
 
     rule_id_to_files_main = get_rule_ids_per_file_in_main()
@@ -85,19 +85,19 @@ def main():
     print(f"🔍 Checking rule ID conflicts for files: {[f.name for _, f in changed_files]}")
 
     for status, path in changed_files:
-        print(f"\n🔎 Checking file: {path.name}")
+        print(f"\n Checking file: {path.name}")
 
         try:
             dev_content = path.read_text()
             dev_ids = extract_rule_ids_from_xml(dev_content)
         except Exception as e:
-            print(f"⚠️ Could not read {path.name}: {e}")
+            print(f" Could not read {path.name}: {e}")
             continue
 
         # Check for internal duplicates
         duplicates = detect_duplicates(dev_ids)
         if duplicates:
-            print(f"❌ Duplicate rule IDs detected in {path.name}: {sorted(duplicates)}")
+            print(f" Duplicate rule IDs detected in {path.name}: {sorted(duplicates)}")
             sys.exit(1)
 
         if status == "A":
@@ -107,13 +107,13 @@ def main():
                 print_conflicts(conflicting_ids, rule_id_to_files_main)
                 sys.exit(1)
             else:
-                print(f"✅ No conflict in new file {path.name}")
+                print(f" No conflict in new file {path.name}")
 
         elif status == "M":
             # Modified file
             main_ids = get_rule_ids_from_main_version(path)
             if set(dev_ids) == set(main_ids):
-                print(f"ℹ️ {path.name} modified but rule IDs unchanged.")
+                print(f"ℹ {path.name} modified but rule IDs unchanged.")
                 continue
 
             new_or_changed_ids = set(dev_ids) - set(main_ids)
@@ -123,9 +123,9 @@ def main():
                 print_conflicts(conflicting_ids, rule_id_to_files_main)
                 sys.exit(1)
             else:
-                print(f"✅ Modified file {path.name} has no conflicting rule IDs.")
+                print(f" Modified file {path.name} has no conflicting rule IDs.")
 
-    print("\n✅ All rule file changes passed conflict checks.")
+    print("\n All rule file changes passed conflict checks.")
 
 if __name__ == "__main__":
     main()
