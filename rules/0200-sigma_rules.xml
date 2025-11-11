@@ -10,7 +10,7 @@
     <description>File with suspicious double extension detected</description>
     <mitre><id>T1036.007</id></mitre>
     <group>attack.defense_evasion,sigma,</group>
-  </rule><rule id="100202" level="12">
+  </rule><rule id="100400" level="12">
     <if_sid>61608</if_sid>
     <field name="win.eventdata.targetFilename" type="pcre2">\.library-ms$</field>
     <description>Suspicious .library-ms file – potential CVE-2025-24054 exploit</description>
