@@ -82,7 +82,7 @@ def main():
 
     rule_id_to_files_main = get_rule_ids_per_file_in_main()
 
-    print(f"🔍 Checking rule ID conflicts for files: {[f.name for _, f in changed_files]}")
+    print(f" Checking rule ID conflicts for files: {[f.name for _, f in changed_files]}")
 
     for status, path in changed_files:
         print(f"\n Checking file: {path.name}")

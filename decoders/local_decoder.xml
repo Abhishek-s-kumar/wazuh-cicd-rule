@@ -21,6 +21,8 @@
   - extra_data - Any extra data
 -->
 
-<decoder name="local_decoder_example">
-    <program_name>local_decoder_example</program_name>
+<decoder name="demo_decoder">
+  <program_name>demo_app</program_name>
+  <regex>^User (?P<user>\w+) logged in from (?P<ip>\S+)$</regex>
 </decoder>
+
