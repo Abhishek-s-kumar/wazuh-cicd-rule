@@ -16,7 +16,7 @@
     <description>Suspicious .library-ms file – potential CVE-2025-24054 exploit</description>
     <mitre><id>T1204.002</id></mitre>
     <group>attack.execution,cve.2025.24054,sigma,</group>
-  </rule><rule id="100400" level="8">
+  </rule><rule id="100202" level="8">
     <if_sid>61608</if_sid>
     <field name="win.eventdata.targetFilename" type="pcre2">(?i)\\AppData\\Local\\Microsoft\\Windows\\INetCache\\Content\.Outlook\\.*\.(exe|dll|bat|vbs|js|hta|scr)</field>
     <description>Suspicious executable file in Outlook temp directory</description>
