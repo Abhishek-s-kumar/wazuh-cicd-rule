@@ -2,21 +2,54 @@ name: Update Rulesets on SIEM
 on:
   push:
     branches: [ "main" ]
-    paths: ["**.xml"] # Only trigger on XML file changes
-  workflow_dispatch: # Allows manual triggering
+    paths: ["**.xml"]
+  workflow_dispatch:
+
 jobs:
   DaaC:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted  # Your Kali runner
+    
     steps:
-      - name: Apply modified or new decoders and rules to Local Wazuh SIEM
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
+      - name: Create backup of current rules
         run: |
-          sudo bash -c '
-          cd /var/ossec/etc/
-          git pull origin main
-          chown wazuh:wazuh /var/ossec/etc/decoders/* && chmod 660 /var/ossec/etc/decoders/*
-          chown wazuh:wazuh /var/ossec/etc/rules/* && chmod 660 /var/ossec/etc/rules/*
-          sudo systemctl restart wazuh-manager \
-          && echo "Ruleset apply SUCCESS!!! - Wazuh manager restarted successfully." \
-          || echo "Ruleset apply FAILURE!!! - Wazuh manager failed to restart, check ruleset for error..."
-          sudo systemctl status wazuh-manager -l --no-pager
-          '
+          sudo mkdir -p /backup/
+          sudo cp -r /var/ossec/etc/rules /backup/wazuh-rules 2>/dev/null || echo "No existing rules to backup"
+          sudo cp -r /var/ossec/etc/decoders /backup/wazuh-decoders 2>/dev/null || echo "No existing decoders to backup"
+          echo "Backup completed"
+
+      - name: Copy new rules and decoders
+        run: |
+          # Create directories if they don't exist
+          sudo mkdir -p /var/ossec/etc/rules
+          sudo mkdir -p /var/ossec/etc/decoders
+          
+          # Copy from repo to Wazuh (assuming your repo has rules/ and decoders/ folders)
+          if [ -d "rules" ]; then
+            sudo cp rules/*.xml /var/ossec/etc/rules/ 2>/dev/null || true
+          fi
+          
+          if [ -d "decoders" ]; then
+            sudo cp decoders/*.xml /var/ossec/etc/decoders/ 2>/dev/null || true
+          fi
+
+      - name: Set correct permissions
+        run: |
+          sudo chown wazuh:wazuh /var/ossec/etc/rules/* 2>/dev/null || true
+          sudo chmod 660 /var/ossec/etc/rules/* 2>/dev/null || true
+          sudo chown wazuh:wazuh /var/ossec/etc/decoders/* 2>/dev/null || true
+          sudo chmod 660 /var/ossec/etc/decoders/* 2>/dev/null || true
+
+      - name: Validate configuration
+        run: |
+          sudo /var/ossec/bin/wazuh-control configtest
+
+      - name: Restart Wazuh manager
+        run: |
+          sudo systemctl restart wazuh-manager
+
+      - name: Show Wazuh status
+        run: |
+          sudo systemctl status wazuh-manager --no-pager
