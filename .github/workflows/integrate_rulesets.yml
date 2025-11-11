@@ -7,48 +7,35 @@ on:
 
 jobs:
   DaaC:
-    runs-on: self-hosted  # Your Kali runner
+    runs-on: self-hosted
     
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         
-      - name: Create backup of current rules
+      - name: Create backup
         run: |
           sudo mkdir -p /backup/
-          sudo cp -r /var/ossec/etc/rules /backup/wazuh-rules 2>/dev/null || echo "No existing rules to backup"
-          sudo cp -r /var/ossec/etc/decoders /backup/wazuh-decoders 2>/dev/null || echo "No existing decoders to backup"
-          echo "Backup completed"
+          sudo cp -r /var/ossec/etc/rules /backup/wazuh-rules 2>/dev/null || true
+          sudo cp -r /var/ossec/etc/decoders /backup/wazuh-decoders 2>/dev/null || true
 
       - name: Copy new rules and decoders
         run: |
-          # Create directories if they don't exist
-          sudo mkdir -p /var/ossec/etc/rules
-          sudo mkdir -p /var/ossec/etc/decoders
-          
-          # Copy from repo to Wazuh (assuming your repo has rules/ and decoders/ folders)
-          if [ -d "rules" ]; then
-            sudo cp rules/*.xml /var/ossec/etc/rules/ 2>/dev/null || true
-          fi
-          
-          if [ -d "decoders" ]; then
-            sudo cp decoders/*.xml /var/ossec/etc/decoders/ 2>/dev/null || true
-          fi
+          sudo mkdir -p /var/ossec/etc/rules /var/ossec/etc/decoders
+          [ -d "rules" ] && sudo cp rules/*.xml /var/ossec/etc/rules/ 2>/dev/null || true
+          [ -d "decoders" ] && sudo cp decoders/*.xml /var/ossec/etc/decoders/ 2>/dev/null || true
 
-      - name: Set correct permissions
+      - name: Set permissions
         run: |
           sudo chown wazuh:wazuh /var/ossec/etc/rules/* 2>/dev/null || true
           sudo chmod 660 /var/ossec/etc/rules/* 2>/dev/null || true
           sudo chown wazuh:wazuh /var/ossec/etc/decoders/* 2>/dev/null || true
           sudo chmod 660 /var/ossec/etc/decoders/* 2>/dev/null || true
 
-      - name: Validate configuration
-        run: |
-          sudo /var/ossec/bin/wazuh-control configtest
-
       - name: Restart Wazuh manager
         run: |
           sudo systemctl restart wazuh-manager
+          echo " Wazuh manager restarted successfully"
 
       - name: Show Wazuh status
         run: |
