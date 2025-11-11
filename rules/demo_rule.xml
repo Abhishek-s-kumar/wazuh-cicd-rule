@@ -1,6 +1,0 @@
-<group name="demo,">
-  <rule id="100001" level="5">
-    <decoded_as>demo_decoder</decoded_as>
-    <description>User login from demo_app detected</description>
-  </rule>
-</group>
