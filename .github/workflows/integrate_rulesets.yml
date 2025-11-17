@@ -40,8 +40,9 @@ jobs:
           echo "Wazuh manager restarted successfully"
 
       - name: Performance comparison
-        run: python tests/performance_monitor.py --action compare
-        continue-on-error: true  # Don't break deployment for performance warnings
+         run: |
+          python3 scripts/kali_performance_monitor.py
+        continue-on-error: true
 
       - name: Show Wazuh status
         run: |
