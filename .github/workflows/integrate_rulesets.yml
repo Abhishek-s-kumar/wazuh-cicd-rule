@@ -2,13 +2,12 @@ name: Update Rulesets on SIEM
 on:
   push:
     branches: [ "main" ]
-    paths: ["**.xml"]
+    paths: ["rules/**", "decoders/**"]
   workflow_dispatch:
 
 jobs:
   DaaC:
     runs-on: self-hosted
-    
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -18,6 +17,9 @@ jobs:
           sudo mkdir -p /backup/
           sudo cp -r /var/ossec/etc/rules /backup/wazuh-rules 2>/dev/null || true
           sudo cp -r /var/ossec/etc/decoders /backup/wazuh-decoders 2>/dev/null || true
+
+      - name: Performance baseline
+        run: python tests/performance_monitor.py --action baseline
 
       - name: Copy new rules and decoders
         run: |
@@ -35,8 +37,21 @@ jobs:
       - name: Restart Wazuh manager
         run: |
           sudo systemctl restart wazuh-manager
-          echo " Wazuh manager restarted successfully"
+          echo "Wazuh manager restarted successfully"
+
+      - name: Performance comparison
+        run: python tests/performance_monitor.py --action compare
+        continue-on-error: true  # Don't break deployment for performance warnings
 
       - name: Show Wazuh status
         run: |
           sudo systemctl status wazuh-manager --no-pager
+
+      - name: Rollback on failure
+        if: failure()
+        run: |
+          echo "Deployment failed, rolling back..."
+          sudo cp -r /backup/wazuh-rules/* /var/ossec/etc/rules/ 2>/dev/null || true
+          sudo cp -r /backup/wazuh-decoders/* /var/ossec/etc/decoders/ 2>/dev/null || true
+          sudo systemctl restart wazuh-manager
+          exit 1
