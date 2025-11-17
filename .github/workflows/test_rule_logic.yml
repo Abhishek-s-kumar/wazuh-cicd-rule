@@ -1,0 +1,18 @@
+name: Test Rule Logic
+on:
+  pull_request:
+    branches: [main]
+    paths: ["rules/**"]
+
+jobs:
+  rule-logic-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+      - name: Run rule logic tests
+        run: python tests/rule_logic_tester.py
+        continue-on-error: true  # Non-blocking for PRs

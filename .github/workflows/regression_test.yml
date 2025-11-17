@@ -1,0 +1,15 @@
+name: Regression Test
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 2 * * *'  # Daily at 2 AM
+
+jobs:
+  regression:
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+      - name: Backup current alerts baseline
+        run: python scripts/backup_alerts.py
+      - name: Run regression tests
+        run: python tests/regression_tester.py
