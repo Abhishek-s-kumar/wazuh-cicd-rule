@@ -9,7 +9,9 @@ jobs:
     runs-on: self-hosted
     steps:
       - uses: actions/checkout@v4
+      
       - name: Backup current alerts baseline
         run: python scripts/backup_alerts.py
+      
       - name: Run regression tests
         run: python tests/regression_tester.py
