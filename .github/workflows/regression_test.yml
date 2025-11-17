@@ -10,18 +10,23 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       
-      - name: Install Python dependencies
+      - name: Set up Python virtual environment
         run: |
-          python3 -m pip install --upgrade pip
+          python3 -m venv /tmp/venv
+          source /tmp/venv/bin/activate
+          # No need to install packages for our current scripts
       
       - name: Backup current alerts baseline
-        run: python scripts/backup_alerts.py
+        run: |
+          source /tmp/venv/bin/activate
+          python scripts/backup_alerts.py
       
       - name: Run regression tests
-        run: python tests/regression_tester.py
-        continue-on-error: true  # Don't block on regression warnings
+        run: |
+          source /tmp/venv/bin/activate
+          python tests/regression_tester.py
+        continue-on-error: true
 
       - name: Upload regression report
         if: always()
-        run: |
-          echo "Regression test completed - check logs for details"
+        run: echo "Regression test completed - check logs for details"
