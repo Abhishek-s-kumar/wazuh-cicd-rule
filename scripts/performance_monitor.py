@@ -63,7 +63,7 @@ class PerformanceMonitor:
                 print(f"  - {warning}")
             return False
         
-        print("✅ Performance within acceptable limits")
+        print("Performance within acceptable limits")
         return True
     
     def get_memory_usage(self):
