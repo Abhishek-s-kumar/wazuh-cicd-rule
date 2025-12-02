@@ -42,7 +42,7 @@ jobs:
           # Check for empty XML files
           if [ -d "/var/ossec/etc/rules" ]; then
             find /var/ossec/etc/rules -name "*.xml" -type f -empty 2>/dev/null | while read file; do
-              echo " ERROR: Empty rule file: $(basename "$file")"
+              echo "ERROR: Empty rule file: $(basename "$file")"
               exit 1
             done
           fi
@@ -50,7 +50,7 @@ jobs:
           # Quick Wazuh configuration test
           echo "Running quick configuration test..."
           if ! sudo /var/ossec/bin/wazuh-logtest -t 2>&1 | grep -q "Configuration OK"; then
-            echo " ERROR: Wazuh configuration test failed"
+            echo "ERROR: Wazuh configuration test failed"
             echo "Configuration test output:"
             sudo /var/ossec/bin/wazuh-logtest -t
             exit 1
@@ -75,7 +75,7 @@ jobs:
       - name: Rollback on failure
         if: failure()
         run: |
-          echo " DEPLOYMENT FAILED - AUTO-ROLLBACK INITIATED "
+          echo "DEPLOYMENT FAILED - AUTO-ROLLBACK INITIATED"
           echo "Timestamp: $(date)"
           echo "Commit: ${{ github.sha }}"
           
@@ -84,9 +84,9 @@ jobs:
           if [ -d "/backup/wazuh-rules" ]; then
             sudo rm -rf /var/ossec/etc/rules/*
             sudo cp -r /backup/wazuh-rules/* /var/ossec/etc/rules/
-            echo " Rules restored"
+            echo "Rules restored"
           else
-            echo " Warning: No rules backup found"
+            echo "Warning: No rules backup found"
           fi
           
           # 2. Restore decoders from backup
@@ -94,9 +94,9 @@ jobs:
           if [ -d "/backup/wazuh-decoders" ]; then
             sudo rm -rf /var/ossec/etc/decoders/*
             sudo cp -r /backup/wazuh-decoders/* /var/ossec/etc/decoders/
-            echo " Decoders restored"
+            echo "Decoders restored"
           else
-            echo " Warning: No decoders backup found"
+            echo "Warning: No decoders backup found"
           fi
           
           # 3. Restart Wazuh
@@ -107,9 +107,9 @@ jobs:
           # 4. Verify restart was successful
           echo "Verifying Wazuh status..."
           if sudo systemctl is-active --quiet wazuh-manager; then
-            echo " Rollback successful - Wazuh is running"
+            echo "Rollback successful - Wazuh is running"
           else
-            echo " Critical: Wazuh failed to start after rollback"
+            echo "Critical: Wazuh failed to start after rollback"
             echo "Check logs: sudo tail -50 /var/ossec/logs/ossec.log"
           fi
           
