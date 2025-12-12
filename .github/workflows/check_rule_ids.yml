@@ -92,13 +92,13 @@ jobs:
             echo "❌ No valid ossec.conf found at $CONFIG_FILE"
             echo "Creating minimal config for testing..."
             sudo tee "$CONFIG_FILE" > /dev/null << 'CONFIG_EOF'
-<ossec_config>
-  <ruleset>
-    <decoder_dir>etc/decoders</decoder_dir>
-    <rule_dir>etc/rules</rule_dir>
-  </ruleset>
-</ossec_config>
-CONFIG_EOF
+            <ossec_config>
+              <ruleset>
+                <decoder_dir>etc/decoders</decoder_dir>
+                <rule_dir>etc/rules</rule_dir>
+              </ruleset>
+            </ossec_config>
+            CONFIG_EOF
           fi
           
           # Test current configuration
@@ -108,13 +108,10 @@ CONFIG_EOF
           else
             echo "⚠️  Current configuration has issues (but PR validation continues)"
           fi
-          
-          # Test with PR rules/decoders
-          echo "Testing with PR rules/decoders..."
-          
-          # Test XML syntax of PR files
-          echo "Testing XML syntax of PR files..."
-          
+      
+      - name: Test XML syntax of PR files
+        if: steps.check_wazuh.outputs.WAZUH_EXISTS == 'true'
+        run: |
           # Test rules
           if [ -d "rules" ]; then
             RULE_COUNT=$(find rules -name "*.xml" -type f 2>/dev/null | wc -l)
@@ -156,5 +153,3 @@ CONFIG_EOF
           else
             echo "No decoders directory found in PR"
           fi
-          
-          echo "✅ Pre-flight checks completed successfully"
