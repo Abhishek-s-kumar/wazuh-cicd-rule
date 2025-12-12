@@ -1,131 +1,220 @@
-import subprocess
+#!/usr/bin/env python3
+"""
+Wazuh Rule Logic Tester
+Validates XML rule files for common issues.
+Run as: python tests/rule_logic_tester.py
+"""
+
+import os
+import sys
+import re
 import xml.etree.ElementTree as ET
 from pathlib import Path
-import sys
-from collections import defaultdict, Counter
+from typing import List, Dict, Tuple
 
-def run_git_command(args):
-    result = subprocess.run(args, capture_output=True, text=True, check=True)
-    return result.stdout
-
-def get_changed_rule_files():
-    try:
-        output = run_git_command(["git", "diff", "--name-status", "origin/main...HEAD"])
-        changed_files = []
-        for line in output.strip().splitlines():
-            parts = line.strip().split(maxsplit=1)
-            if len(parts) != 2:
-                continue
-            status, file_path = parts
-            if file_path.startswith("rules/") and file_path.endswith(".xml"):
-                changed_files.append((status, Path(file_path)))
-        return changed_files
-    except subprocess.CalledProcessError as e:
-        print("❌ Failed to get changed files:", e)
-        sys.exit(1)
-
-def extract_rule_ids_from_xml(content):
-    ids = []
-    try:
-        # Wrap multiple root elements in a fake <root> tag to avoid parse errors
-        wrapped = f"<root>{content}</root>"
-        root = ET.fromstring(wrapped)
-        for rule in root.findall(".//rule"):
-            rule_id = rule.get("id")
-            if rule_id and rule_id.isdigit():
-                ids.append(int(rule_id))
-    except ET.ParseError as e:
-        print(f"⚠️ XML Parse Error: {e}")
-    return ids
-
-
-def get_rule_ids_per_file_in_main():
-    run_git_command(["git", "fetch", "origin", "main"])
-    files_output = run_git_command(["git", "ls-tree", "-r", "origin/main", "--name-only"])
-    xml_files = [f for f in files_output.splitlines() if f.startswith("rules/") and f.endswith(".xml")]
-
-    rule_id_to_files = defaultdict(set)
-    for file in xml_files:
-        try:
-            content = run_git_command(["git", "show", f"origin/main:{file}"])
-            rule_ids = extract_rule_ids_from_xml(content)
-            for rule_id in rule_ids:
-                rule_id_to_files[rule_id].add(file)
-        except subprocess.CalledProcessError:
-            continue
-    return rule_id_to_files
-
-def get_rule_ids_from_main_version(file_path: Path):
-    try:
-        content = run_git_command(["git", "show", f"origin/main:{file_path.as_posix()}"])
-        return extract_rule_ids_from_xml(content)
-    except subprocess.CalledProcessError:
-        return []
-
-def detect_duplicates(rule_ids):
-    counter = Counter(rule_ids)
-    return [rule_id for rule_id, count in counter.items() if count > 1]
-
-def print_conflicts(conflicting_ids, rule_id_to_files):
-    print("❌ Conflicts detected:")
-    for rule_id in sorted(conflicting_ids):
-        files = rule_id_to_files.get(rule_id, [])
-        print(f"  - Rule ID {rule_id} found in:")
-        for f in files:
-            print(f"    • {f}")
+class RuleLogicTester:
+    def __init__(self, rules_dir: str = "rules"):
+        """
+        Initialize tester with path to rules directory.
+        
+        Args:
+            rules_dir: Path to directory containing XML rule files
+        """
+        self.rules_dir = Path(rules_dir)
+        self.rule_files = []
+        self.all_rules = []  # List of (rule_id, file_name, rule_element)
+        self.errors = []
+        self.warnings = []
+        
+    def discover_rule_files(self) -> bool:
+        """Find all XML files in rules directory."""
+        if not self.rules_dir.exists():
+            self._add_error(f"Rules directory not found: {self.rules_dir}")
+            return False
+            
+        self.rule_files = list(self.rules_dir.glob("*.xml"))
+        if not self.rule_files:
+            self._add_warning(f"No XML files found in {self.rules_dir}")
+            return False
+            
+        print(f"Found {len(self.rule_files)} rule file(s)")
+        return True
+    
+    def parse_rule_files(self):
+        """Parse all rule files and extract rule information."""
+        for file_path in self.rule_files:
+            try:
+                tree = ET.parse(file_path)
+                root = tree.getroot()
+                
+                # Wazuh rules are typically under <group> or direct <rule> elements
+                for rule_elem in root.findall(".//rule"):
+                    rule_id = rule_elem.get("id")
+                    if rule_id:
+                        self.all_rules.append((rule_id, file_path.name, rule_elem))
+                    else:
+                        self._add_warning(f"Rule without ID in {file_path.name}")
+                        
+            except ET.ParseError as e:
+                self._add_error(f"XML parse error in {file_path.name}: {e}")
+            except Exception as e:
+                self._add_error(f"Unexpected error reading {file_path.name}: {e}")
+    
+    def validate_rule_ids(self):
+        """Check for duplicate rule IDs."""
+        id_count = {}
+        for rule_id, file_name, _ in self.all_rules:
+            id_count[rule_id] = id_count.get(rule_id, 0) + 1
+            
+        for rule_id, count in id_count.items():
+            if count > 1:
+                # Find all files with this duplicate ID
+                files = [f for rid, f, _ in self.all_rules if rid == rule_id]
+                self._add_error(f"Duplicate rule ID {rule_id} found in {count} files: {', '.join(files)}")
+    
+    def validate_rule_structure(self):
+        """Validate required fields in each rule."""
+        required_fields = ["id", "level"]
+        recommended_fields = ["description", "group"]
+        
+        for rule_id, file_name, rule_elem in self.all_rules:
+            # Check required fields
+            for field in required_fields:
+                if not rule_elem.get(field):
+                    self._add_error(f"Rule {rule_id} ({file_name}) missing required attribute: {field}")
+            
+            # Check recommended fields
+            for field in recommended_fields:
+                if not rule_elem.get(field):
+                    self._add_warning(f"Rule {rule_id} ({file_name}) missing recommended attribute: {field}")
+            
+            # Validate level is numeric and reasonable
+            level = rule_elem.get("level")
+            if level:
+                try:
+                    level_num = int(level)
+                    if not (0 <= level_num <= 15):
+                        self._add_warning(f"Rule {rule_id} ({file_name}) has unusual level: {level}")
+                except ValueError:
+                    self._add_error(f"Rule {rule_id} ({file_name}) has non-numeric level: {level}")
+    
+    def test_regex_patterns(self):
+        """Test if regex patterns in rules are valid."""
+        for rule_id, file_name, rule_elem in self.all_rules:
+            # Look for common regex-containing elements
+            regex_elements = [
+                ("match", rule_elem.findtext("match")),
+                ("regex", rule_elem.findtext("regex")),
+                ("pattern", rule_elem.findtext("pattern")),
+            ]
+            
+            for field_name, pattern in regex_elements:
+                if pattern and pattern.strip():
+                    try:
+                        re.compile(pattern)
+                    except re.error as e:
+                        self._add_error(f"Rule {rule_id} ({file_name}) has invalid regex in '{field_name}': {pattern} - Error: {e}")
+    
+    def check_rule_dependencies(self):
+        """
+        Check for potential rule dependencies.
+        Wazuh rules can reference other rules using 'if_sid' or 'if_defined_sid'.
+        """
+        for rule_id, file_name, rule_elem in self.all_rules:
+            if_sid = rule_elem.get("if_sid") or rule_elem.findtext("if_sid")
+            if if_sid:
+                # Check if referenced rule exists
+                referenced_ids = [sid.strip() for sid in if_sid.split(",")]
+                for ref_id in referenced_ids:
+                    if not any(rid == ref_id for rid, _, _ in self.all_rules):
+                        self._add_warning(f"Rule {rule_id} ({file_name}) references non-existent rule ID: {ref_id}")
+    
+    def _add_error(self, message: str):
+        """Add an error message."""
+        self.errors.append(message)
+    
+    def _add_warning(self, message: str):
+        """Add a warning message."""
+        self.warnings.append(message)
+    
+    def run_tests(self) -> bool:
+        """
+        Run all validation tests.
+        
+        Returns:
+            bool: True if no errors found, False otherwise
+        """
+        print("=" * 60)
+        print("Wazuh Rule Logic Tester")
+        print("=" * 60)
+        
+        # Step 1: Discover files
+        if not self.discover_rule_files():
+            return False
+        
+        # Step 2: Parse files
+        self.parse_rule_files()
+        if not self.all_rules:
+            self._add_warning("No rules found in any XML files")
+        
+        print(f"Parsed {len(self.all_rules)} rule(s)")
+        
+        # Step 3: Run validations
+        print("\nRunning validations...")
+        self.validate_rule_ids()
+        self.validate_rule_structure()
+        self.test_regex_patterns()
+        self.check_rule_dependencies()
+        
+        # Step 4: Report results
+        self.print_results()
+        
+        # Return success status (no errors)
+        return len(self.errors) == 0
+    
+    def print_results(self):
+        """Print all test results."""
+        if self.errors:
+            print("\n" + "!" * 60)
+            print("ERRORS FOUND:")
+            print("!" * 60)
+            for i, error in enumerate(self.errors, 1):
+                print(f"{i}. {error}")
+        
+        if self.warnings:
+            print("\n" + "-" * 60)
+            print("WARNINGS:")
+            print("-" * 60)
+            for i, warning in enumerate(self.warnings, 1):
+                print(f"{i}. {warning}")
+        
+        print("\n" + "=" * 60)
+        print("SUMMARY:")
+        print("=" * 60)
+        print(f"Rule files processed: {len(self.rule_files)}")
+        print(f"Total rules found: {len(self.all_rules)}")
+        print(f"Errors: {len(self.errors)}")
+        print(f"Warnings: {len(self.warnings)}")
+        
+        if not self.errors and not self.warnings:
+            print("\n✅ All tests passed!")
+        elif self.errors:
+            print("\n❌ Validation failed with errors")
+        else:
+            print("\n⚠️  Validation passed with warnings")
 
 def main():
-    changed_files = get_changed_rule_files()
-    if not changed_files:
-        print("✅ No rule files were changed in this PR.")
-        return
-
-    rule_id_to_files_main = get_rule_ids_per_file_in_main()
-
-    print(f"🔍 Checking rule ID conflicts for files: {[f.name for _, f in changed_files]}")
-
-    for status, path in changed_files:
-        print(f"\n🔎 Checking file: {path.name}")
-
-        try:
-            dev_content = path.read_text()
-            dev_ids = extract_rule_ids_from_xml(dev_content)
-        except Exception as e:
-            print(f"⚠️ Could not read {path.name}: {e}")
-            continue
-
-        # Check for internal duplicates
-        duplicates = detect_duplicates(dev_ids)
-        if duplicates:
-            print(f"❌ Duplicate rule IDs detected in {path.name}: {sorted(duplicates)}")
-            sys.exit(1)
-
-        if status == "A":
-            # New file
-            conflicting_ids = set(dev_ids) & set(rule_id_to_files_main.keys())
-            if conflicting_ids:
-                print_conflicts(conflicting_ids, rule_id_to_files_main)
-                sys.exit(1)
-            else:
-                print(f"✅ No conflict in new file {path.name}")
-
-        elif status == "M":
-            # Modified file
-            main_ids = get_rule_ids_from_main_version(path)
-            if set(dev_ids) == set(main_ids):
-                print(f"ℹ️ {path.name} modified but rule IDs unchanged.")
-                continue
-
-            new_or_changed_ids = set(dev_ids) - set(main_ids)
-            conflicting_ids = new_or_changed_ids & set(rule_id_to_files_main.keys())
-
-            if conflicting_ids:
-                print_conflicts(conflicting_ids, rule_id_to_files_main)
-                sys.exit(1)
-            else:
-                print(f"✅ Modified file {path.name} has no conflicting rule IDs.")
-
-    print("\n✅ All rule file changes passed conflict checks.")
+    """Main entry point for the script."""
+    # Default to 'rules' directory, but allow command line argument
+    rules_dir = "rules"
+    if len(sys.argv) > 1:
+        rules_dir = sys.argv[1]
+    
+    tester = RuleLogicTester(rules_dir)
+    success = tester.run_tests()
+    
+    # Exit with appropriate code for CI/CD pipeline
+    sys.exit(0 if success else 1)
 
 if __name__ == "__main__":
     main()
