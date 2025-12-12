@@ -35,5 +35,10 @@
     <time>02:00-04:00</time>
     <description>Suppress: scheduled SharePoint maintenance</description>
   </rule>
-
+  <rule id="100602" level="0">
+    <if_sid>100201</if_sid>
+    <field name="win.eventdata.user">DOMAIN\sp_admin</field>
+    <time>02:00-04:00</time>
+    <description>Suppress: scheduled SharePoint maintenance</description>
+  </rule>
 </group>    <!-- re-close the group -->
