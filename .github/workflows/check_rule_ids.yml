@@ -91,14 +91,14 @@ jobs:
           if [ ! -f "$CONFIG_FILE" ] || [ ! -s "$CONFIG_FILE" ]; then
             echo "❌ No valid ossec.conf found at $CONFIG_FILE"
             echo "Creating minimal config for testing..."
-            sudo tee "$CONFIG_FILE" > /dev/null << 'EOF'
+            sudo tee "$CONFIG_FILE" > /dev/null << 'CONFIG_EOF'
 <ossec_config>
   <ruleset>
     <decoder_dir>etc/decoders</decoder_dir>
     <rule_dir>etc/rules</rule_dir>
   </ruleset>
 </ossec_config>
-EOF
+CONFIG_EOF
           fi
           
           # Test current configuration
