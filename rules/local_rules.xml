@@ -29,13 +29,6 @@
     <description>Suppress: user-created library shortcuts</description>
   </rule>
   
-
-<rule id="100601" level="0">
-    <if_sid>100202</if_sid>
-    <field name="win.eventdata.targetFilename" type="pcre2">C:\\Users\\.*\\Libraries\\</field>
-    <description>Suppress: user-created library shortcuts</description>
-  </rule>
-  
   <rule id="100602" level="0">
     <if_sid>100201</if_sid>
     <field name="win.eventdata.user">DOMAIN\sp_admin</field>
