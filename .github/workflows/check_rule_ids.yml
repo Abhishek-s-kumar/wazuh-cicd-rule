@@ -1,7 +1,7 @@
 name: Validate Rule Changes
 on:
   pull_request:
-    branches: [ "main" ]
+    branches: [ "main","rollb" ]
     paths: ["rules/**", "decoders/**"]
 
 jobs:
