@@ -15,7 +15,7 @@
     <description>sshd: authentication failed from IP 1.1.1.1.</description>
     <group>authentication_failed,pci_dss_10.2.4,pci_dss_10.2.5,</group>
   </rule>
-
+fbzfb
   <!-- Sigma r2025-10-01 suppressions -->
   <rule id="100600" level="0">
     <if_sid>100100</if_sid>
