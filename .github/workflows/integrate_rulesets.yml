@@ -7,47 +7,92 @@ on:
 
 jobs:
   DaaC:
-    runs-on: self-hosted
+    runs-on: [self-hosted, linux]  # Added specific labels for better targeting
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+      
+      - name: Validate runner capabilities
+        id: validate_runner
+        run: |
+          echo "🔍 Validating runner capabilities for Wazuh deployment..."
+          
+          # Check for sudo
+          if ! command -v sudo >/dev/null 2>&1; then
+            echo "❌ ERROR: 'sudo' command not available on runner"
+            echo "This job requires sudo for file operations and service management"
+            exit 1
+          fi
+          
+          # Check for systemctl/systemd
+          if ! command -v systemctl >/dev/null 2>&1; then
+            echo "❌ ERROR: 'systemctl' not found - runner doesn't use systemd"
+            echo "Cannot manage Wazuh service without systemd"
+            exit 1
+          fi
+          
+          # Check for xmllint (for validation)
+          if ! command -v xmllint >/dev/null 2>&1; then
+            echo "Installing xmllint for XML validation..."
+            sudo apt-get update && sudo apt-get install -y libxml2-utils 2>/dev/null || {
+              echo "⚠️  Failed to install xmllint - XML validation will be limited"
+            }
+          fi
+          
+          # Check if Wazuh is accessible
+          if [ ! -d "/var/ossec" ]; then
+            echo "⚠️  WARNING: /var/ossec directory not found - Wazuh may not be installed"
+          fi
+          
+          echo "✅ Runner capability check completed"
         
       - name: Check Wazuh installation
         id: check_wazuh
         run: |
-          if [ -d "/var/ossec" ]; then
+          # Check for Wazuh directory and binary
+          if [ -d "/var/ossec" ] && [ -f "/var/ossec/bin/wazuh-analysisd" ]; then
             echo "Wazuh found at /var/ossec"
+            WAZUH_VERSION=$(/var/ossec/bin/wazuh-analysisd -V 2>/dev/null | head -1 || echo "Unknown version")
+            echo "Wazuh version: $WAZUH_VERSION"
             echo "WAZUH_EXISTS=true" >> $GITHUB_OUTPUT
           else
-            echo "Wazuh not found on runner"
+            echo "Wazuh not found on runner (either directory or binary missing)"
             echo "WAZUH_EXISTS=false" >> $GITHUB_OUTPUT
           fi
 
       - name: Create backup
         run: |
           sudo mkdir -p /backup/
+          BACKUP_TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+          
           if [ -d "/var/ossec/etc/rules" ]; then
-            sudo cp -r /var/ossec/etc/rules /backup/wazuh-rules/
-            echo "✓ Rules backed up"
+            sudo mkdir -p /backup/wazuh-rules-$BACKUP_TIMESTAMP
+            sudo cp -r /var/ossec/etc/rules/* /backup/wazuh-rules-$BACKUP_TIMESTAMP/ 2>/dev/null || true
+            echo "✓ Rules backed up to /backup/wazuh-rules-$BACKUP_TIMESTAMP"
           else
-            sudo mkdir -p /backup/wazuh-rules
+            sudo mkdir -p /backup/wazuh-rules-$BACKUP_TIMESTAMP
             echo "⚠ No existing rules to backup"
           fi
           
           if [ -d "/var/ossec/etc/decoders" ]; then
-            sudo cp -r /var/ossec/etc/decoders /backup/wazuh-decoders/
-            echo "✓ Decoders backed up"
+            sudo mkdir -p /backup/wazuh-decoders-$BACKUP_TIMESTAMP
+            sudo cp -r /var/ossec/etc/decoders/* /backup/wazuh-decoders-$BACKUP_TIMESTAMP/ 2>/dev/null || true
+            echo "✓ Decoders backed up to /backup/wazuh-decoders-$BACKUP_TIMESTAMP"
           else
-            sudo mkdir -p /backup/wazuh-decoders
+            sudo mkdir -p /backup/wazuh-decoders-$BACKUP_TIMESTAMP
             echo "⚠ No existing decoders to backup"
           fi
+          
+          # Create symlink to latest backup for rollback reference
+          sudo ln -sfn /backup/wazuh-rules-$BACKUP_TIMESTAMP /backup/wazuh-rules-latest 2>/dev/null || true
+          sudo ln -sfn /backup/wazuh-decoders-$BACKUP_TIMESTAMP /backup/wazuh-decoders-latest 2>/dev/null || true
 
       - name: Performance baseline
         run: |
-          if [ -f "scripts/performance_monitor.py" ]; then
+          if [ -f "scripts/performance_monitor.py" ] && [ "${{ steps.check_wazuh.outputs.WAZUH_EXISTS }}" == "true" ]; then
             python scripts/performance_monitor.py --action baseline
           else
-            echo "Skipping performance baseline - script not found"
+            echo "Skipping performance baseline - script not found or Wazuh not installed"
           fi
         continue-on-error: true
 
@@ -56,52 +101,110 @@ jobs:
           sudo mkdir -p /var/ossec/etc/rules /var/ossec/etc/decoders
           
           # Copy rules if they exist
-          if [ -d "rules" ] && [ "$(ls -A rules/*.xml 2>/dev/null)" ]; then
-            sudo cp rules/*.xml /var/ossec/etc/rules/
-            echo "Copied $(ls rules/*.xml | wc -l) rule files"
+          if [ -d "rules" ]; then
+            RULE_COUNT=$(find rules -name "*.xml" -type f 2>/dev/null | wc -l)
+            if [ "$RULE_COUNT" -gt 0 ]; then
+              sudo cp rules/*.xml /var/ossec/etc/rules/
+              echo "Copied $RULE_COUNT rule file(s)"
+            else
+              echo "No rule files to copy"
+            fi
           else
-            echo "No rule files to copy"
+            echo "No rules directory found"
           fi
           
           # Copy decoders if they exist
-          if [ -d "decoders" ] && [ "$(ls -A decoders/*.xml 2>/dev/null)" ]; then
-            sudo cp decoders/*.xml /var/ossec/etc/decoders/
-            echo "Copied $(ls decoders/*.xml | wc -l) decoder files"
+          if [ -d "decoders" ]; then
+            DECODER_COUNT=$(find decoders -name "*.xml" -type f 2>/dev/null | wc -l)
+            if [ "$DECODER_COUNT" -gt 0 ]; then
+              sudo cp decoders/*.xml /var/ossec/etc/decoders/
+              echo "Copied $DECODER_COUNT decoder file(s)"
+            else
+              echo "No decoder files to copy"
+            fi
           else
-            echo "No decoder files to copy"
+            echo "No decoders directory found"
           fi
 
       - name: Set permissions
         run: |
-          sudo chown -R wazuh:wazuh /var/ossec/etc/rules/ /var/ossec/etc/decoders/ 2>/dev/null || true
-          sudo chmod -R 660 /var/ossec/etc/rules/ /var/ossec/etc/decoders/ 2>/dev/null || true
-          echo "Permissions set"
+          echo "Setting appropriate permissions for Wazuh directories..."
+          
+          # Set ownership only if wazuh user exists
+          if id -u wazuh >/dev/null 2>&1; then
+            echo "Setting ownership to wazuh:wazuh..."
+            sudo chown -R wazuh:wazuh /var/ossec/etc/rules/ /var/ossec/etc/decoders/
+          else
+            echo "⚠️  wazuh user not found - skipping ownership change"
+            echo "Note: Wazuh may fail to read files if permissions are incorrect"
+          fi
+          
+          # Set proper permissions: directories need execute, files don't
+          for dir in /var/ossec/etc/rules /var/ossec/etc/decoders; do
+            if [ -d "$dir" ]; then
+              echo "Setting permissions for $dir..."
+              sudo find "$dir" -type d -exec chmod 750 {} \;
+              sudo find "$dir" -type f -exec chmod 660 {} \;
+              echo "  Directories: 750, Files: 660"
+            fi
+          done
+          
+          echo "✅ Permissions set correctly"
+
+      - name: Validate Wazuh configuration
+        if: steps.check_wazuh.outputs.WAZUH_EXISTS == 'true'
+        run: |
+          echo "Validating Wazuh configuration with new rules..."
+          if sudo /var/ossec/bin/wazuh-analysisd -t; then
+            echo "✅ Wazuh configuration is valid"
+          else
+            echo "❌ Wazuh configuration validation failed"
+            echo "The new rules/decoders may have syntax errors"
+            exit 1
+          fi
 
       - name: Restart Wazuh manager
         if: steps.check_wazuh.outputs.WAZUH_EXISTS == 'true'
         run: |
           echo "Restarting Wazuh manager..."
           sudo systemctl restart wazuh-manager
-          sleep 5
-          if sudo systemctl is-active wazuh-manager; then
-            echo "✓ Wazuh manager restarted successfully"
-          else
-            echo "✗ Wazuh manager failed to restart"
+          sleep 10  # Increased sleep for service to fully start
+          
+          # Wait for service to become active
+          MAX_RETRIES=5
+          RETRY_COUNT=0
+          while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+            if sudo systemctl is-active wazuh-manager --quiet; then
+              echo "✓ Wazuh manager restarted successfully"
+              break
+            else
+              RETRY_COUNT=$((RETRY_COUNT+1))
+              echo "Waiting for Wazuh to start... ($RETRY_COUNT/$MAX_RETRIES)"
+              sleep 5
+            fi
+          done
+          
+          if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
+            echo "✗ Wazuh manager failed to restart after $MAX_RETRIES attempts"
+            sudo systemctl status wazuh-manager --no-pager
             exit 1
           fi
 
       - name: Skip restart (Wazuh not installed)
         if: steps.check_wazuh.outputs.WAZUH_EXISTS == 'false'
         run: |
-          echo "⚠ Skipping Wazuh restart - not installed on runner"
+          echo "⚠️  Skipping Wazuh restart - not installed on runner"
           echo "This is normal if runner is separate from Wazuh server"
+          echo "Note: Manual deployment required for production systems"
 
       - name: Performance comparison
         run: |
-          if [ -f "scripts/kali_performance_monitor.py" ]; then
-            python3 scripts/kali_performance_monitor.py
+          if [ -f "scripts/performance_monitor.py" ] && [ "${{ steps.check_wazuh.outputs.WAZUH_EXISTS }}" == "true" ]; then
+            python scripts/performance_monitor.py --action compare || {
+              echo "⚠️  Performance check completed with warnings"
+            }
           else
-            echo "Skipping performance comparison - script not found"
+            echo "Skipping performance comparison - script not found or Wazuh not installed"
           fi
         continue-on-error: true
 
@@ -109,7 +212,7 @@ jobs:
         if: steps.check_wazuh.outputs.WAZUH_EXISTS == 'true'
         run: |
           echo "Current Wazuh status:"
-          sudo systemctl status wazuh-manager --no-pager | head -20
+          sudo systemctl status wazuh-manager --no-pager | grep -A 10 "wazuh-manager.service"
 
       - name: Rollback on failure
         if: failure()
@@ -119,33 +222,35 @@ jobs:
           
           # Only rollback if Wazuh exists
           if [ -d "/var/ossec" ]; then
-            echo "Rolling back rules..."
-            if [ -d "/backup/wazuh-rules" ] && [ "$(ls -A /backup/wazuh-rules 2>/dev/null)" ]; then
+            echo "Looking for latest backup..."
+            
+            if [ -L "/backup/wazuh-rules-latest" ] && [ -d "$(readlink -f /backup/wazuh-rules-latest)" ]; then
+              echo "Rolling back rules from $(readlink -f /backup/wazuh-rules-latest)..."
               sudo rm -rf /var/ossec/etc/rules/*
-              sudo cp -r /backup/wazuh-rules/* /var/ossec/etc/rules/
+              sudo cp -r "$(readlink -f /backup/wazuh-rules-latest)"/* /var/ossec/etc/rules/ 2>/dev/null || true
               echo "✓ Rules restored"
             else
-              echo "⚠ No rules backup to restore"
+              echo "⚠️  No rules backup found to restore"
             fi
             
-            echo "Rolling back decoders..."
-            if [ -d "/backup/wazuh-decoders" ] && [ "$(ls -A /backup/wazuh-decoders 2>/dev/null)" ]; then
+            if [ -L "/backup/wazuh-decoders-latest" ] && [ -d "$(readlink -f /backup/wazuh-decoders-latest)" ]; then
+              echo "Rolling back decoders from $(readlink -f /backup/wazuh-decoders-latest)..."
               sudo rm -rf /var/ossec/etc/decoders/*
-              sudo cp -r /backup/wazuh-decoders/* /var/ossec/etc/decoders/
+              sudo cp -r "$(readlink -f /backup/wazuh-decoders-latest)"/* /var/ossec/etc/decoders/ 2>/dev/null || true
               echo "✓ Decoders restored"
             else
-              echo "⚠ No decoders backup to restore"
+              echo "⚠️  No decoders backup found to restore"
             fi
             
-            # Restart if we restored anything
-            if [ -d "/backup/wazuh-rules" ] || [ -d "/backup/wazuh-decoders" ]; then
-              echo "Restarting Wazuh..."
-              sudo systemctl restart wazuh-manager
-              sleep 3
+            # Restart Wazuh if we restored anything
+            if [ -L "/backup/wazuh-rules-latest" ] || [ -L "/backup/wazuh-decoders-latest" ]; then
+              echo "Restarting Wazuh with restored configuration..."
+              sudo systemctl restart wazuh-manager 2>/dev/null || true
+              sleep 5
               echo "Rollback completed"
             fi
           else
-            echo "⚠ Wazuh not installed on runner - nothing to rollback"
+            echo "⚠️  Wazuh not installed on runner - nothing to rollback"
           fi
           
           echo "=== ROLLBACK FINISHED ==="
