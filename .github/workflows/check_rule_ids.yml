@@ -1,7 +1,7 @@
 name: Validate Rule Changes
 on:
   pull_request:
-    branches: [ "main", "rollback" ]  # Fixed from "rollb" to "rollback"
+    branches: [ "main", "rollback" ]
     paths: ["rules/**", "decoders/**"]
 
 jobs:
@@ -91,7 +91,7 @@ jobs:
           if [ ! -f "$CONFIG_FILE" ] || [ ! -s "$CONFIG_FILE" ]; then
             echo "❌ No valid ossec.conf found at $CONFIG_FILE"
             echo "Creating minimal config for testing..."
-            cat << 'EOF' | sudo tee "$CONFIG_FILE" > /dev/null
+            sudo tee "$CONFIG_FILE" > /dev/null << 'EOF'
 <ossec_config>
   <ruleset>
     <decoder_dir>etc/decoders</decoder_dir>
