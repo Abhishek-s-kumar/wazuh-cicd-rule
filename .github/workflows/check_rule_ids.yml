@@ -1,16 +1,62 @@
-wazuh-preflight:
-  runs-on: kali  # Just use the runner name as label
-  steps:
-    - uses: actions/checkout@v4
-    - name: Quick Wazuh Check
-      run: |
-        echo "Running on: $(hostname)"
-        echo "If you see this, job is on your kali runner!"
-        
-        # Quick Wazuh check
-        if [ -d "/var/ossec" ]; then
-          echo "✅ Wazuh found at /var/ossec"
-          ls -la /var/ossec/etc/
-        else
-          echo "❌ Wazuh not found"
-        fi
+name: Validate Rule Changes
+on:
+  pull_request:
+    branches: [ "main","rollb" ]
+    paths: ["rules/**", "decoders/**"]
+
+jobs:
+  check-rule-ids:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout PR branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+      
+      - name: Fetch main branch
+        run: git fetch origin main
+      
+      - name: Run rule ID conflict checker
+        run: python check_rule_ids.py
+
+  validate-xml-syntax:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+      - name: Run XML validation
+        run: python tests/xml_validator.py
+
+  security-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v4
+      - name: Run security checks
+        run: python tests/security_scanner.py
+
+  wazuh-preflight:
+    runs-on: kali  # Just use the runner name as label
+    steps:
+      - uses: actions/checkout@v4
+      - name: Quick Wazuh Check
+        run: |
+          echo "Running on: $(hostname)"
+          echo "If you see this, job is on your kali runner!"
+          
+          # Quick Wazuh check
+          if [ -d "/var/ossec" ]; then
+            echo "✅ Wazuh found at /var/ossec"
+            ls -la /var/ossec/etc/
+          else
+            echo "❌ Wazuh not found"
+          fi
