@@ -2,7 +2,7 @@ name: Update Rulesets on SIEM
 on:
   push:
     branches: [ "main" ]
-    paths: ["rules/**", "decoders/**"]
+    paths: ["**.xml"]
   workflow_dispatch:
 
 jobs:
